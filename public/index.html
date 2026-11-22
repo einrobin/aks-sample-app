@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Notes</title>
+  <style>
+    :root {
+      --bg: #eef1f4; --panel: #ffffff; --ink: #1c2733; --muted: #5d6b7a;
+      --line: #d5dbe2; --accent: #2457a6; --accent-ink: #ffffff; --danger: #b3261e;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14191f; --panel: #1c232b; --ink: #e6ebf0; --muted: #9aa7b4;
+        --line: #2e3842; --accent: #7aa7f0; --accent-ink: #0d1520; --danger: #f2948c;
+        color-scheme: dark;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    .app { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+    aside { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
+    aside header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; }
+    h1 { font-size: 1.25rem; margin: 0; letter-spacing: -0.01em; }
+    ul { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+    li button {
+      all: unset; display: block; width: 100%; padding: .75rem 1.25rem; cursor: pointer;
+      border-top: 1px solid var(--line);
+    }
+    li button[aria-current="true"] { box-shadow: inset 3px 0 0 var(--accent); background: var(--bg); }
+    li button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .t { font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .d { color: var(--muted); font-size: .85rem; }
+    main { padding: 2rem; display: flex; flex-direction: column; gap: 1rem; max-width: 760px; }
+    input, textarea {
+      font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line);
+      border-radius: 6px; padding: .6rem .75rem; width: 100%;
+    }
+    input { font-size: 1.4rem; font-weight: 600; }
+    textarea { min-height: 50vh; resize: vertical; }
+    input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .actions { display: flex; gap: .5rem; align-items: center; }
+    .btn {
+      font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+      border-radius: 6px; padding: .45rem .9rem; cursor: pointer;
+    }
+    .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    .btn.danger { color: var(--danger); }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #status { color: var(--muted); font-size: .9rem; margin-left: auto; }
+    .empty { padding: 1.25rem; color: var(--muted); }
+    @media (max-width: 720px) {
+      .app { grid-template-columns: 1fr; }
+      aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
+      main { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <header>
+        <h1>Notes</h1>
+        <button class="btn primary" id="new">New note</button>
+      </header>
+      <ul id="list"></ul>
+    </aside>
+    <main>
+      <label for="title" hidden>Title</label>
+      <input id="title" placeholder="Title" maxlength="200">
+      <label for="content" hidden>Content</label>
+      <textarea id="content" placeholder="Write something …"></textarea>
+      <div class="actions">
+        <button class="btn primary" id="save">Save</button>
+        <button class="btn danger" id="delete" hidden>Delete</button>
+        <span id="status" role="status"></span>
+      </div>
+    </main>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let notes = [];
+    let currentId = null;
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Error ${res.status}`);
+      }
+      return res.status === 204 ? null : res.json();
+    }
+
+    function status(text) { $('status').textContent = text; }
+
+    function renderList() {
+      const list = $('list');
+      list.replaceChildren();
+      if (notes.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = 'No notes yet. Create your first one on the right.';
+        list.append(li);
+        return;
+      }
+      for (const n of notes) {
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        b.setAttribute('aria-current', String(n.id === currentId));
+        const t = document.createElement('span'); t.className = 't'; t.textContent = n.title;
+        const d = document.createElement('span'); d.className = 'd';
+        d.textContent = new Date(n.updatedAt).toLocaleString('en-US');
+        b.append(t, d);
+        b.onclick = () => open(n);
+        li.append(b);
+        list.append(li);
+      }
+    }
+
+    function open(note) {
+      currentId = note?.id ?? null;
+      $('title').value = note?.title ?? '';
+      $('content').value = note?.content ?? '';
+      $('delete').hidden = !currentId;
+      status('');
+      renderList();
+      $('title').focus();
+    }
+
+    async function load() {
+      try {
+        notes = await api('/api/notes');
+        renderList();
+      } catch (e) { status(`Could not load notes: ${e.message}`); }
+    }
+
+    $('new').onclick = () => open(null);
+
+    $('save').onclick = async () => {
+      const body = JSON.stringify({ title: $('title').value, content: $('content').value });
+      try {
+        const note = currentId
+          ? await api(`/api/notes/${currentId}`, { method: 'PUT', body })
+          : await api('/api/notes', { method: 'POST', body });
+        currentId = note.id;
+        await load();
+        $('delete').hidden = false;
+        status('Saved');
+      } catch (e) { status(e.message); }
+    };
+
+    $('delete').onclick = async () => {
+      if (!currentId || !confirm('Delete this note?')) return;
+      try {
+        await api(`/api/notes/${currentId}`, { method: 'DELETE' });
+        await load();
+        open(null);
+        status('Deleted');
+      } catch (e) { status(e.message); }
+    };
+
+    load();
+  </script>
+</body>
+</html>
