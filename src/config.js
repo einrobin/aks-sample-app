@@ -34,9 +34,52 @@ export function parseContainerUrl(raw) {
   };
 }
 
+const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Optional summary feature. Returns null if it is not configured.
+// AZURE_OPENAI_CLIENT_ID selects a separate identity for Azure OpenAI; without it the
+// default identity is used (in the pod: AZURE_CLIENT_ID, locally: az login).
+export function parseOpenAiConfig(env) {
+  const endpoint = env.AZURE_OPENAI_ENDPOINT?.trim();
+  const deployment = env.AZURE_OPENAI_DEPLOYMENT?.trim();
+  const clientId = env.AZURE_OPENAI_CLIENT_ID?.trim() || undefined;
+
+  if (!endpoint && !deployment) return null;
+  if (!endpoint || !deployment) {
+    throw new Error('AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT must be set together');
+  }
+
+  let url;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    throw new Error(`AZURE_OPENAI_ENDPOINT is not a valid URL: ${endpoint}`);
+  }
+  if (url.protocol !== 'https:') {
+    throw new Error('AZURE_OPENAI_ENDPOINT must use https');
+  }
+  if (url.search) {
+    throw new Error('AZURE_OPENAI_ENDPOINT must not contain a query string (no API keys)');
+  }
+  if (url.pathname !== '/') {
+    throw new Error('AZURE_OPENAI_ENDPOINT must be the resource endpoint only, e.g. https://<name>.openai.azure.com/');
+  }
+  if (clientId && !GUID_PATTERN.test(clientId)) {
+    throw new Error('AZURE_OPENAI_CLIENT_ID must be a client ID (GUID)');
+  }
+
+  return {
+    // Azure OpenAI "v1" API: works with the regular OpenAI client, no api-version needed
+    baseURL: `${url.origin}/openai/v1/`,
+    deployment,
+    clientId,
+  };
+}
+
 export function loadConfig(env = process.env) {
   return {
     port: Number(env.PORT ?? 8080),
     ...parseContainerUrl(env.BLOB_CONTAINER_URL),
+    openai: parseOpenAiConfig(env),
   };
 }

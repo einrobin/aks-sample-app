@@ -2,9 +2,12 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { NoteStore, NotFoundError, isValidId } from './store.js';
+import { Summarizer, SummaryError } from './summarizer.js';
 
 const config = loadConfig();
 const store = new NoteStore(config);
+// Optional: without Azure OpenAI configuration the summary feature is simply missing
+const summarizer = config.openai ? new Summarizer(config.openai) : null;
 const app = express();
 
 app.disable('x-powered-by');
@@ -78,6 +81,30 @@ app.delete('/api/notes/:id', async (req, res) => {
   res.status(204).end();
 });
 
+// --- Summary (optional) ---------------------------------------------------
+// Deliberately NOT part of /readyz: if Azure OpenAI is down, notes keep working.
+// Removing pods from traffic because of an optional feature would make things worse.
+app.get('/api/features', (_req, res) => {
+  res.json({ summarize: Boolean(summarizer) });
+});
+
+app.post('/api/notes/:id/summary', async (req, res) => {
+  if (!summarizer) return res.status(404).json({ error: 'Summaries are not enabled' });
+
+  const note = await store.get(req.params.id); // errors go to the general handler (404/502)
+  try {
+    res.json({ summary: await summarizer.summarize(note) });
+  } catch (err) {
+    if (err instanceof SummaryError) return res.status(err.status).json({ error: err.message });
+    if (err.status === 429) {
+      return res.status(429).json({ error: 'The AI service is currently busy, please try again shortly' });
+    }
+    // 401/403 here usually means: role assignment or federated credential of the OpenAI identity is missing
+    console.error('Summary failed:', err.status ?? '', err.message);
+    res.status(502).json({ error: 'Summary failed' });
+  }
+});
+
 // Express 5 automatically forwards errors from async handlers to here
 app.use((err, _req, res, _next) => {
   if (err instanceof NotFoundError) return res.status(404).json({ error: 'Note not found' });
@@ -88,6 +115,12 @@ app.use((err, _req, res, _next) => {
 const server = app.listen(config.port, () => {
   console.log(`notes-app listening on port ${config.port}`);
   console.log(`Storage: ${config.containerUrl} (prefix: "${config.prefix}")`);
+  console.log(
+    config.openai
+      ? `Summaries: ${config.openai.baseURL} (deployment: ${config.openai.deployment}, ` +
+        `identity: ${config.openai.clientId ?? 'default'})`
+      : 'Summaries: disabled (AZURE_OPENAI_ENDPOINT not set)',
+  );
 });
 
 // Shut down gracefully when Kubernetes sends SIGTERM
