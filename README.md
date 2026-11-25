@@ -13,12 +13,24 @@ in Azure Blob Storage. Access works without keys via `DefaultAzureCredential`
 | `AZURE_OPENAI_ENDPOINT`   | `https://my-openai.openai.azure.com/`                  | no (enables summaries) |
 | `AZURE_OPENAI_DEPLOYMENT` | `summary` (name of the model deployment)               | with endpoint |
 | `AZURE_OPENAI_CLIENT_ID`  | client ID of a separate identity for Azure OpenAI      | no       |
+| `BASIC_AUTH_USER`         | `demo`                                                 | no (enables login) |
+| `BASIC_AUTH_PASSWORD`     | at least 12 characters                                 | with user |
 
 Everything after the container name is the "subfolder" (blob prefix).
 Each note is stored as `<prefix>/<uuid>.json`.
 
 The identity needs the **Storage Blob Data Contributor** role on the storage account or container.
 The container must already exist (Terraform); the app does not create it.
+
+## Login with HTTP Basic Auth (optional)
+
+If `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD` are set, the UI and API require a login
+(the browser shows its built-in dialog). `/healthz` and `/readyz` stay open for the kubelet probes.
+
+- **HTTPS only:** the browser sends the credentials with every request, merely Base64-encoded.
+- **One shared login:** no individual users, no MFA, no logout. Good enough to keep a demo
+  private; for real users put Entra ID in front (e.g. oauth2-proxy).
+- In Kubernetes the values belong in a **Secret**, not in the ConfigMap.
 
 ## Summaries with Azure OpenAI (optional)
 

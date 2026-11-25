@@ -76,10 +76,32 @@ export function parseOpenAiConfig(env) {
   };
 }
 
+const MIN_PASSWORD_LENGTH = 12;
+
+// Optional shared login. Returns null if it is not configured.
+export function parseBasicAuthConfig(env) {
+  const username = env.BASIC_AUTH_USER;
+  const password = env.BASIC_AUTH_PASSWORD;
+
+  if (!username && !password) return null;
+  if (!username || !password) {
+    throw new Error('BASIC_AUTH_USER and BASIC_AUTH_PASSWORD must be set together');
+  }
+  if (username.includes(':')) {
+    throw new Error('BASIC_AUTH_USER must not contain ":"');
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`BASIC_AUTH_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters long`);
+  }
+
+  return { username, password };
+}
+
 export function loadConfig(env = process.env) {
   return {
     port: Number(env.PORT ?? 8080),
     ...parseContainerUrl(env.BLOB_CONTAINER_URL),
     openai: parseOpenAiConfig(env),
+    basicAuth: parseBasicAuthConfig(env),
   };
 }

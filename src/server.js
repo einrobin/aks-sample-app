@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { NoteStore, NotFoundError, isValidId } from './store.js';
 import { Summarizer, SummaryError } from './summarizer.js';
+import { basicAuth } from './auth.js';
 
 const config = loadConfig();
 const store = new NoteStore(config);
@@ -11,6 +12,9 @@ const summarizer = config.openai ? new Summarizer(config.openai) : null;
 const app = express();
 
 app.disable('x-powered-by');
+// Before everything else, so the UI and API are only reachable with a login.
+// The probes are exempt inside the middleware.
+if (config.basicAuth) app.use(basicAuth(config.basicAuth));
 app.use(express.json({ limit: '100kb' }));
 app.use(express.static(fileURLToPath(new URL('../public', import.meta.url))));
 
@@ -120,6 +124,11 @@ const server = app.listen(config.port, () => {
       ? `Summaries: ${config.openai.baseURL} (deployment: ${config.openai.deployment}, ` +
         `identity: ${config.openai.clientId ?? 'default'})`
       : 'Summaries: disabled (AZURE_OPENAI_ENDPOINT not set)',
+  );
+  console.log(
+    config.basicAuth
+      ? `Basic auth: enabled (user: ${config.basicAuth.username})`
+      : 'Basic auth: disabled (BASIC_AUTH_USER not set), the app is open to everyone',
   );
 });
 
